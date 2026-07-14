@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { bookingService } from '../services/BookingService';
+import { bookingService } from '../services/bookingService';
 
 export default function BookingForm() {
   const [formData, setFormData] = useState({ fullName: '', phone: '', gender: 'MALE', date: '', courtNumber: 3 });
-  
-  // 1. ĐÃ SỬA: Giá trị cọc mặc định ban đầu (Nam) là 3000
   const [depositAmount, setDepositAmount] = useState(3000); 
   const [step, setStep] = useState(1); 
   const [qrUrl, setQrUrl] = useState('');
@@ -14,8 +12,11 @@ export default function BookingForm() {
   const [timeLeft, setTimeLeft] = useState(300); 
   const [paymentStatus, setPaymentStatus] = useState('PENDING');
   const [cooldownTime, setCooldownTime] = useState(0);
-  
   const [availableDays, setAvailableDays] = useState([]);
+
+  // Bổ sung các State phục vụ hiển thị thông báo trùng lịch nâng cao
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [duplicateData, setDuplicateData] = useState(null);
 
   useEffect(() => {
     const generateNext6Days = () => {
@@ -154,14 +155,8 @@ export default function BookingForm() {
     return true;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!formData.date) {
-      alert("Vui lòng click chọn 1 ô lịch đặt sân dưới đây!");
-      return;
-    }
-
+  // Hàm thực thi gọi API khởi tạo đơn hàng thực tế sau khi đã qua các lớp kiểm duyệt trùng lịch
+  const executeBookingCreation = async () => {
     if (!checkSpamProtection()) return;
     setLoading(true);
 
@@ -185,11 +180,59 @@ export default function BookingForm() {
       const qrLink = `https://img.vietqr.io/image/ACB-16300101-compact2.png?amount=${depositAmount}&addInfo=${encodeURIComponent(`GOM ${result.bookingCode}`)}&accountName=GOM BADMINTON`;
       setQrUrl(qrLink);
       setStep(2);
+      setShowConfirmModal(false); 
     } catch (error) {
       alert(error.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!formData.date) {
+      alert("Vui lòng click chọn 1 ô lịch đặt sân dưới đây!");
+      return;
+    }
+
+    // Kiểm tra xem khách hàng có đang chọn đặt lịch vào Thứ 3 không
+    const selectedDay = availableDays.find(d => d.dateStr === formData.date);
+    const isChoosingTuesday = selectedDay?.dayLabel === 'Thứ 3';
+
+    if (isChoosingTuesday) {
+      setLoading(true);
+      try {
+        // Thực hiện quét lịch sử đăng ký của số điện thoại trên máy chủ Render công khai
+        const response = await fetch(`https://gom-backend-kxug.onrender.com/api/bookings/lookup?phone=${formData.phone.trim()}`);
+        if (response.ok) {
+          const history = await response.json();
+          // Lọc tìm đơn hàng Thứ 3 (mã bắt đầu bằng T3) có trạng thái hợp lệ
+          const activeTuesdayBooking = history.find(b => 
+            b.bookingCode?.startsWith('T3') && 
+            ['PAID', 'PENDING', 'ADMIN_ADDED'].includes(b.paymentStatus)
+          );
+
+          if (activeTuesdayBooking) {
+            const [year, month, day] = activeTuesdayBooking.bookingDate.split('-');
+            setDuplicateData({
+              date: `${day}/${month}/${year}`,
+              courtNumber: activeTuesdayBooking.courtNumber
+            });
+            setShowConfirmModal(true); // Kích hoạt hiển thị hộp thoại xác nhận thiết kế đẹp
+            setLoading(false);
+            return; // Chặn luồng gửi dữ liệu trực tiếp để chờ xác nhận từ khách hàng
+          }
+        }
+      } catch (err) {
+        console.error("Lỗi xác thực dữ liệu trùng lịch:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Trường hợp không chọn Thứ 3 hoặc không phát hiện trùng lặp dữ liệu
+    await executeBookingCreation();
   };
 
   const formatTime = (seconds) => {
@@ -199,7 +242,7 @@ export default function BookingForm() {
   };
 
   return (
-    <div className="mx-auto max-w-md px-4 pt-6 md:pt-10">
+    <div className="mx-auto max-w-md px-4 pt-6 md:pt-10 relative">
       <div className="overflow-hidden rounded-3xl border border-white/5 bg-white/5 p-6 shadow-xl backdrop-blur-md">
         
         <h2 className="text-center text-xl font-black text-white md:text-2xl tracking-tight">Đặt Lịch Sân Tập</h2>
@@ -227,12 +270,9 @@ export default function BookingForm() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {/* 2. ĐÃ SỬA: Nút Nam set cọc 3000 */}
               <button type="button" onClick={() => { setFormData({...formData, gender: 'MALE'}); setDepositAmount(3000); }} className={`p-3 rounded-2xl border text-sm font-bold flex flex-col items-center ${formData.gender === 'MALE' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>
                 <span>Nam</span><span className="text-[10px] font-normal opacity-70">Cọc test: 3.000đ</span>
               </button>
-              
-              {/* 3. ĐÃ SỬA: Nút Nữ set cọc 2000 */}
               <button type="button" onClick={() => { setFormData({...formData, gender: 'FEMALE'}); setDepositAmount(2000); }} className={`p-3 rounded-2xl border text-sm font-bold flex flex-col items-center ${formData.gender === 'FEMALE' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>
                 <span>Nữ</span><span className="text-[10px] font-normal opacity-70">Cọc test: 2.000đ</span>
               </button>
@@ -316,6 +356,45 @@ export default function BookingForm() {
           </div>
         )}
       </div>
+
+      {/* ==============================================================
+          CUSTOM MODAL: THÔNG BÁO TRÙNG LỊCH THỨ 3 (UI CAO CẤP)
+         ============================================================== */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center space-x-3 text-amber-400">
+              <span className="text-2xl">⚠️</span>
+              <h3 className="text-base font-black uppercase tracking-wide text-white">Phát hiện trùng lịch Thứ 3</h3>
+            </div>
+            
+            <p className="text-xs text-slate-300 leading-relaxed font-medium">
+              Số điện thoại này đã được sử dụng để đăng ký vào <span className="text-indigo-400 font-bold">Thứ 3 ngày {duplicateData?.date}</span> tại <span className="text-indigo-400 font-bold">Sân số {duplicateData?.courtNumber}</span>.
+            </p>
+            
+            <p className="text-[11px] text-slate-400 italic">
+              Bạn có chắc chắn muốn tiếp tục đăng ký thêm một suất đặt sân nữa cho ngày Thứ 3 tuần này không?
+            </p>
+
+            <div className="flex space-x-2 pt-2">
+              <button 
+                type="button" 
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-700 transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                type="button" 
+                onClick={executeBookingCreation}
+                className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-950/50 hover:from-indigo-500 hover:to-indigo-600 transition-all"
+              >
+                Vẫn tiếp tục
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
