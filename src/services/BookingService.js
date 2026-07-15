@@ -1,63 +1,48 @@
-const BASE_URL = 'https://gom-backend-kxug.onrender.com/api';
+const BASE_URL = 'https://gom-backend-kxug.onrender.com/api/bookings';
 
 export const bookingService = {
+  // Khách đặt lịch cọc tiền
   createBooking: async (bookingData) => {
-    const response = await fetch(`${BASE_URL}/bookings`, {
+    const res = await fetch(`${BASE_URL}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bookingData),
+      body: JSON.stringify(bookingData)
     });
-    if (!response.ok) {
-      const errorMsg = await response.text();
-      throw new Error(errorMsg || 'Không thể tạo yêu cầu đặt lịch.');
-    }
-    return await response.json();
+    if (!res.ok) { const text = await res.text(); throw new Error(text); }
+    return res.json();
   },
 
-  lookupByPhone: async (phone) => {
-    const response = await fetch(`${BASE_URL}/bookings/lookup?phone=${encodeURIComponent(phone.trim())}`);
-    if (!response.ok) {
-      if (response.status === 404) throw new Error('Không tìm thấy dữ liệu đặt lịch cho số điện thoại này.');
-      throw new Error('Có lỗi xảy ra.');
-    }
-    return await response.json();
-  },
-
-  // API kiểm tra trạng thái đơn phục vụ màn hình đếm ngược thanh toán
-  checkBookingStatus: async (code) => {
-    const response = await fetch(`${BASE_URL}/bookings/status/${code}`);
-    if (!response.ok) throw new Error('Không thể đồng bộ trạng thái đơn.');
-    return await response.json();
-  },
-
-  getAdminSchedules: async (date, courtNumber) => {
-    const response = await fetch(`${BASE_URL}/admin/bookings?date=${date}&courtNumber=${courtNumber}`);
-    if (!response.ok) throw new Error('Không thể tải danh sách xếp sân.');
-    return await response.json();
-  },
-
+  // Admin ép thêm thành viên MIỄN CỌC
   adminForceAddPlayer: async (playerData) => {
-    const response = await fetch(`${BASE_URL}/admin/bookings/force-add`, {
+    const res = await fetch(`${BASE_URL}/admin-add`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(playerData),
+      body: JSON.stringify(playerData)
     });
-    if (!response.ok) {
-      const errorTxt = await response.text();
-      throw new Error(errorTxt || 'Thất bại.');
-    }
-    return await response.json();
+    if (!res.ok) { const text = await res.text(); throw new Error(text); }
+    return res.json();
   },
 
-  cancelBookingByAdmin: async (bookingId) => {
-    const response = await fetch(`${BASE_URL}/admin/bookings/${bookingId}/cancel`, { method: 'PUT' });
-    if (!response.ok) throw new Error('Hủy tư cách xếp sân thất bại.');
-    return await response.text();
+  // Admin nạp danh sách lịch theo ngày (Không truyền courtNumber nữa)
+  getAdminSchedules: async (date) => {
+    const res = await fetch(`${BASE_URL}/admin/schedules?date=${date}`);
+    if (!res.ok) throw new Error('Không thể tải lịch điều phối');
+    return res.json();
   },
 
+  // Admin nạp danh sách người chơi hôm nay
   getTodaySchedules: async () => {
-    const response = await fetch(`${BASE_URL}/admin/bookings/today`);
-    if (!response.ok) throw new Error('Không thể tải danh sách sân hôm nay.');
-    return await response.json();
+    const res = await fetch(`${BASE_URL}/admin/today`);
+    if (!res.ok) throw new Error('Không thể tải lịch hôm nay');
+    return res.json();
+  },
+
+  // Admin xóa thành viên khỏi sân tập
+  cancelBookingByAdmin: async (id) => {
+    const res = await fetch(`${BASE_URL}/admin/cancel/${id}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) { const text = await res.text(); throw new Error(text); }
+    return res.json();
   }
 };
