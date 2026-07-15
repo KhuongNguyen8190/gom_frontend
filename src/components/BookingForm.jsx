@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { bookingService } from '../services/BookingService';
+import { bookingService } from '../services/bookingService';
 
 export default function BookingForm() {
+  // Gắn cứng ngầm courtNumber: 3 để không báo lỗi Backend
   const [formData, setFormData] = useState({ fullName: '', phone: '', gender: 'MALE', date: '', courtNumber: 3 });
   const [depositAmount, setDepositAmount] = useState(3000); 
   const [step, setStep] = useState(1); 
@@ -13,8 +14,6 @@ export default function BookingForm() {
   const [paymentStatus, setPaymentStatus] = useState('PENDING');
   const [cooldownTime, setCooldownTime] = useState(0);
   const [availableDays, setAvailableDays] = useState([]);
-
-  // Bổ sung các State phục vụ hiển thị thông báo trùng lịch nâng cao
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [duplicateData, setDuplicateData] = useState(null);
 
@@ -77,7 +76,6 @@ export default function BookingForm() {
 
   useEffect(() => {
     if (step !== 2 || !createdBooking) return;
-
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -91,26 +89,24 @@ export default function BookingForm() {
 
     const statusChecker = setInterval(async () => {
       try {
-        const res = await bookingService.checkBookingStatus(createdBooking.bookingCode);
-        if (res.paymentStatus === 'PAID') {
+        const res = await fetch(`https://gom-backend-kxug.onrender.com/api/bookings/status/${createdBooking.bookingCode}`);
+        const data = await res.json();
+        if (data.paymentStatus === 'PAID') {
           clearInterval(statusChecker);
           clearInterval(timer);
           setPaymentStatus('PAID');
           clearActiveBookingStorage(); 
-        } else if (res.paymentStatus === 'EXPIRED_OR_DELETED' || res.paymentStatus === 'FAILED') {
+        } else if (data.paymentStatus === 'EXPIRED_OR_DELETED' || data.paymentStatus === 'FAILED') {
           clearInterval(statusChecker);
           clearInterval(timer);
           handleBookingFailure();
         }
       } catch (err) {
-        console.error("Lỗi đồng bộ trạng thái đơn:", err);
+        console.error("Lỗi đồng bộ trạng thái:", err);
       }
     }, 3000);
 
-    return () => {
-      clearInterval(timer);
-      clearInterval(statusChecker);
-    };
+    return () => { clearInterval(timer); clearInterval(statusChecker); };
   }, [step, createdBooking]);
 
   useEffect(() => {
@@ -155,18 +151,16 @@ export default function BookingForm() {
     return true;
   };
 
-  // Hàm thực thi gọi API khởi tạo đơn hàng thực tế sau khi đã qua các lớp kiểm duyệt trùng lịch
   const executeBookingCreation = async () => {
     if (!checkSpamProtection()) return;
     setLoading(true);
-
     try {
       const result = await bookingService.createBooking({
         fullName: formData.fullName,
         phoneNumber: formData.phone,
         gender: formData.gender,
         bookingDate: formData.date,
-        courtNumber: Number(formData.courtNumber)
+        courtNumber: 3 // Luôn gửi 3 để tránh lỗi Backend
       });
 
       setCreatedBooking(result);
@@ -190,24 +184,20 @@ export default function BookingForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (!formData.date) {
-      alert("Vui lòng click chọn 1 ô lịch đặt sân dưới đây!");
+      alert("Vui lòng click chọn 1 ô lịch đăng ký dưới đây!");
       return;
     }
 
-    // Kiểm tra xem khách hàng có đang chọn đặt lịch vào Thứ 3 không
     const selectedDay = availableDays.find(d => d.dateStr === formData.date);
     const isChoosingTuesday = selectedDay?.dayLabel === 'Thứ 3';
 
     if (isChoosingTuesday) {
       setLoading(true);
       try {
-        // Thực hiện quét lịch sử đăng ký của số điện thoại trên máy chủ Render công khai
         const response = await fetch(`https://gom-backend-kxug.onrender.com/api/bookings/lookup?phone=${formData.phone.trim()}`);
         if (response.ok) {
           const history = await response.json();
-          // Lọc tìm đơn hàng Thứ 3 (mã bắt đầu bằng T3) có trạng thái hợp lệ
           const activeTuesdayBooking = history.find(b => 
             b.bookingCode?.startsWith('T3') && 
             ['PAID', 'PENDING', 'ADMIN_ADDED'].includes(b.paymentStatus)
@@ -215,23 +205,18 @@ export default function BookingForm() {
 
           if (activeTuesdayBooking) {
             const [year, month, day] = activeTuesdayBooking.bookingDate.split('-');
-            setDuplicateData({
-              date: `${day}/${month}/${year}`,
-              courtNumber: activeTuesdayBooking.courtNumber
-            });
-            setShowConfirmModal(true); // Kích hoạt hiển thị hộp thoại xác nhận thiết kế đẹp
+            setDuplicateData({ date: `${day}/${month}/${year}` });
+            setShowConfirmModal(true); 
             setLoading(false);
-            return; // Chặn luồng gửi dữ liệu trực tiếp để chờ xác nhận từ khách hàng
+            return; 
           }
         }
       } catch (err) {
-        console.error("Lỗi xác thực dữ liệu trùng lịch:", err);
+        console.error(err);
       } finally {
         setLoading(false);
       }
     }
-
-    // Trường hợp không chọn Thứ 3 hoặc không phát hiện trùng lặp dữ liệu
     await executeBookingCreation();
   };
 
@@ -245,14 +230,13 @@ export default function BookingForm() {
     <div className="mx-auto max-w-md px-4 pt-6 md:pt-10 relative">
       <div className="overflow-hidden rounded-3xl border border-white/5 bg-white/5 p-6 shadow-xl backdrop-blur-md">
         
-        <h2 className="text-center text-xl font-black text-white md:text-2xl tracking-tight">Đặt Lịch Sân Tập</h2>
+        <h2 className="text-center text-xl font-black text-white md:text-2xl tracking-tight">Đăng Ký Lịch Chơi</h2>
         <p className="mt-1 text-center text-xs text-slate-400 font-medium">Khung giờ: 05:30 – 07:00 sáng</p>
         
         {cooldownTime > 0 ? (
           <div className="mt-6 bg-slate-900/80 border border-rose-500/20 rounded-2xl p-6 text-center space-y-4">
             <div className="text-3xl">🚫</div>
-            <h3 className="text-base font-black text-rose-400 uppercase">Thiết bị đang bị đóng băng</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">Bạn đã spam đặt lịch quá 5 lần trong vòng 5 phút. Vui lòng quay lại sau thời gian đếm ngược hình phạt bên dưới.</p>
+            <h3 className="text-base font-black text-rose-400 uppercase">Bị chặn tạm thời</h3>
             <div className="text-xl font-mono font-black text-white bg-slate-950/80 py-3 rounded-xl border border-slate-800">
               {formatTime(cooldownTime)}
             </div>
@@ -278,13 +262,14 @@ export default function BookingForm() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setFormData({...formData, courtNumber: 3})} className={`py-3 rounded-2xl border text-sm font-bold ${Number(formData.courtNumber) === 3 ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>Sân Số 3</button>
-              <button type="button" onClick={() => setFormData({...formData, courtNumber: 4})} className={`py-3 rounded-2xl border text-sm font-bold ${Number(formData.courtNumber) === 4 ? 'border-indigo-500 bg-indigo-500/10 text-indigo-400' : 'border-slate-800 bg-slate-900/40 text-slate-400'}`}>Sân Số 4</button>
+            {/* Đã xóa nút chọn sân, thay bằng UI tĩnh cố định địa điểm */}
+            <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/10 p-3.5 text-center flex items-center justify-center space-x-2">
+              <span className="text-indigo-400 text-lg">📍</span>
+              <span className="text-sm font-bold text-indigo-300 tracking-wide">Địa điểm: Sân 3 & Sân 4</span>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Chọn lịch đặt sân</label>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Chọn lịch đăng ký</label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {availableDays.map((day) => (
                   <button
@@ -310,7 +295,7 @@ export default function BookingForm() {
             </div>
 
             <button type="submit" disabled={loading} className="w-full rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-4 text-sm font-bold text-white shadow-lg disabled:opacity-50">
-              {loading ? 'Đang gửi yêu cầu...' : `Tiếp tục đặt cọc (${depositAmount.toLocaleString()}đ)`}
+              {loading ? 'Đang gửi...' : `Tiếp tục đặt cọc (${depositAmount.toLocaleString()}đ)`}
             </button>
           </form>
         ) : (
@@ -318,13 +303,12 @@ export default function BookingForm() {
             {paymentStatus === 'PENDING' && (
               <>
                 <div className="text-sm font-bold text-amber-400 bg-amber-500/10 py-2.5 rounded-2xl border border-amber-500/20">
-                  Thời gian giữ sân còn lại: <span className="font-mono font-black text-base">{formatTime(timeLeft)}</span>
+                  Thời gian giữ chỗ còn lại: <span className="font-mono font-black text-base">{formatTime(timeLeft)}</span>
                 </div>
                 <div className="flex justify-center"><div className="p-3 bg-white rounded-3xl"><img src={qrUrl} alt="VietQR" className="max-w-[220px]" /></div></div>
-                
                 <div className="rounded-2xl bg-slate-900/60 p-3.5 text-left text-xs space-y-2 border border-slate-800 font-medium">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Mã đặt sân:</span>
+                    <span className="text-slate-400">Mã đơn:</span>
                     <span className="font-bold text-white tracking-wider">{createdBooking?.bookingCode}</span>
                   </div>
                   <div className="flex justify-between border-t border-slate-800 pt-2">
@@ -332,65 +316,42 @@ export default function BookingForm() {
                     <span className="font-mono font-black text-cyan-400">GOM {createdBooking?.bookingCode}</span>
                   </div>
                 </div>
-                <button onClick={() => { setStep(1); clearActiveBookingStorage(); }} className="text-xs font-bold text-slate-500 underline hover:text-slate-400">Hủy bỏ giao dịch</button>
+                <button onClick={() => { setStep(1); clearActiveBookingStorage(); }} className="text-xs font-bold text-slate-500 underline">Hủy giao dịch</button>
               </>
             )}
 
             {paymentStatus === 'PAID' && (
               <div className="py-8 space-y-3">
                 <div className="w-16 h-16 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-3xl font-bold">✓</div>
-                <h3 className="text-xl font-black text-white">ĐẶT SÂN THÀNH CÔNG!</h3>
-                <p className="text-xs text-slate-400 px-4">Hệ thống khớp mã chuyển khoản thành công. Mã đặt sân của bạn là <strong className="text-indigo-400 font-mono">{createdBooking?.bookingCode}</strong>. Lịch tập đã được khóa chỗ.</p>
-                <button onClick={() => setStep(1)} className="mt-4 rounded-xl bg-slate-800 px-6 py-2 text-xs font-bold text-white">Quay lại trang chủ</button>
+                <h3 className="text-xl font-black text-white">ĐĂNG KÝ THÀNH CÔNG!</h3>
+                <p className="text-xs text-slate-400 px-4">Hệ thống khớp mã chuyển khoản thành công. Lịch chơi của bạn đã được khóa chỗ.</p>
+                <button onClick={() => setStep(1)} className="mt-4 rounded-xl bg-slate-800 px-6 py-2 text-xs font-bold text-white">Xong</button>
               </div>
             )}
 
             {paymentStatus === 'FAILED' && (
               <div className="py-8 space-y-3">
                 <div className="w-16 h-16 bg-rose-500/20 border border-rose-500/30 text-rose-400 rounded-full flex items-center justify-center mx-auto text-3xl font-bold">✕</div>
-                <h3 className="text-xl font-black text-rose-500">ĐẶT SÂN THẤT BẠI</h3>
-                <p className="text-xs text-slate-400 px-4">Đã quá thời hạn 5 phút quy định mà hệ thống chưa nhận được tiền đặt cọc. Yêu cầu của bạn đã bị hủy bỏ và giải phóng slot sân.</p>
-                <button onClick={() => setStep(1)} className="mt-4 rounded-xl bg-rose-600 px-6 py-2 text-xs font-bold text-white hover:bg-rose-700">Thực hiện đăng ký lại</button>
+                <h3 className="text-xl font-black text-rose-500">GIAO DỊCH HẾT HẠN</h3>
+                <button onClick={() => setStep(1)} className="mt-4 rounded-xl bg-rose-600 px-6 py-2 text-xs font-bold text-white">Đăng ký lại</button>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* ==============================================================
-          CUSTOM MODAL: THÔNG BÁO TRÙNG LỊCH THỨ 3 (UI CAO CẤP)
-         ============================================================== */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300">
-          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/80 backdrop-blur-sm transition-opacity">
+          <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl space-y-4">
             <div className="flex items-center space-x-3 text-amber-400">
-              <span className="text-2xl">⚠️</span>
-              <h3 className="text-base font-black uppercase tracking-wide text-white">Phát hiện trùng lịch Thứ 3</h3>
+              <span className="text-2xl">⚠️</span><h3 className="text-base font-black text-white">Phát hiện trùng lịch Thứ 3</h3>
             </div>
-            
             <p className="text-xs text-slate-300 leading-relaxed font-medium">
-              Số điện thoại này đã được sử dụng để đăng ký vào <span className="text-indigo-400 font-bold">Thứ 3 ngày {duplicateData?.date}</span> tại <span className="text-indigo-400 font-bold">Sân số {duplicateData?.courtNumber}</span>.
+              SĐT này đã đăng ký chơi vào <span className="text-indigo-400 font-bold">Thứ 3 ngày {duplicateData?.date}</span>.
             </p>
-            
-            <p className="text-[11px] text-slate-400 italic">
-              Bạn có chắc chắn muốn tiếp tục đăng ký thêm một suất đặt sân nữa cho ngày Thứ 3 tuần này không?
-            </p>
-
             <div className="flex space-x-2 pt-2">
-              <button 
-                type="button" 
-                onClick={() => setShowConfirmModal(false)}
-                className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-700 transition-colors"
-              >
-                Hủy bỏ
-              </button>
-              <button 
-                type="button" 
-                onClick={executeBookingCreation}
-                className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-950/50 hover:from-indigo-500 hover:to-indigo-600 transition-all"
-              >
-                Vẫn tiếp tục
-              </button>
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-bold text-slate-300">Hủy</button>
+              <button type="button" onClick={executeBookingCreation} className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white">Vẫn tiếp tục</button>
             </div>
           </div>
         </div>
