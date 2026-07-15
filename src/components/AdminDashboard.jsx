@@ -12,42 +12,29 @@ export default function AdminDashboard() {
   const [availableDays, setAvailableDays] = useState([]);
 
   useEffect(() => {
-    // THUẬT TOÁN MỚI: Chỉ lấy 3 ngày (Hôm qua, Hôm nay, Ngày mai)
-    const generateThreeDays = () => {
+    const generateNext6Days = () => {
       const days = [];
-      const offsets = [-1, 0, 1]; 
-      const labels = ['Hôm qua', 'Hôm nay', 'Ngày mai'];
-
-      offsets.forEach((offset, index) => {
+      for (let i = 1; i <= 6; i++) {
         const current = new Date();
-        current.setDate(current.getDate() + offset);
+        current.setDate(current.getDate() + i);
 
         const yyyy = current.getFullYear();
         const mm = String(current.getMonth() + 1).padStart(2, '0');
         const dd = String(current.getDate()).padStart(2, '0');
         
         const dayOfWeek = current.getDay(); 
-        
         days.push({
           dateStr: `${yyyy}-${mm}-${dd}`,
-          dayLabel: labels[index],
+          dayLabel: dayOfWeek === 0 ? 'Chủ Nhật' : dayOfWeek === 1 ? 'Thứ 2' : `Thứ ${dayOfWeek + 1}`,
           displayDate: `${dd}/${mm}/${yyyy}`, 
           isMonday: dayOfWeek === 1
         });
-      });
-
-      setAvailableDays(days);
-      
-      // Mặc định focus vào "Hôm nay", nếu "Hôm nay" là thứ 2 thì focus sang "Ngày mai"
-      const today = days[1];
-      if (!today.isMonday) {
-        setSelectedDate(today.dateStr);
-      } else {
-        setSelectedDate(days[2].dateStr);
       }
+      setAvailableDays(days);
+      const firstValidDay = days.find(d => !d.isMonday);
+      if (firstValidDay) setSelectedDate(firstValidDay.dateStr);
     };
-
-    generateThreeDays();
+    generateNext6Days();
     fetchTodaySchedules();
   }, []);
 
@@ -55,7 +42,8 @@ export default function AdminDashboard() {
     if (!selectedDate) return; 
     setLoading(true);
     try {
-      const data = await bookingService.getAdminSchedules(selectedDate);
+      // Gắn ngầm courtNumber: 3 để Backend chạy bình thường, dù hiển thị giao diện gộp chung
+      const data = await bookingService.getAdminSchedules(selectedDate, 3);
       setBookings(data);
     } catch (error) {
       console.error(error);
@@ -77,19 +65,22 @@ export default function AdminDashboard() {
     fetchSchedules();
   }, [selectedDate]);
 
+  // Sĩ số tối đa bây giờ là 16 vì gộp 2 sân
   const activeCount = bookings.filter(b => b.paymentStatus === 'PAID' || b.paymentStatus === 'ADMIN_ADDED').length;
 
   const handleAddPlayer = async (e) => {
     e.preventDefault();
     setFormError('');
     if (activeCount >= 16) {
-      setFormError('Sĩ số ngày này đã đầy (16/16 người)!');
+      setFormError('Sĩ số hôm nay đã đầy (16/16 người)!');
       return;
     }
     try {
+      // Admin Force Add: API phải set status là ADMIN_ADDED
       await bookingService.adminForceAddPlayer({ 
         ...newPlayer, 
-        bookingDate: selectedDate 
+        bookingDate: selectedDate, 
+        courtNumber: 3 // Gắn cứng 3 cho API
       });
       setShowModal(false);
       setNewPlayer({ fullName: '', phoneNumber: '', gender: 'MALE' }); 
@@ -132,25 +123,23 @@ export default function AdminDashboard() {
   return (
     <div className="mx-auto max-w-xl px-4 pt-6 space-y-8 pb-10">
       
-      {/* KHU VỰC 1: BẢNG ĐIỀU PHỐI (HÔM QUA - HÔM NAY - NGÀY MAI) */}
+      {/* KHU VỰC 1: BẢNG ĐIỀU PHỐI */}
       <div className="space-y-4">
         <div className="rounded-3xl border border-white/5 bg-white/5 p-5 shadow-xl space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-black text-white uppercase tracking-tight">Quản Lý Trạng Thái Sân</h2>
-              <p className="text-[11px] text-slate-400 font-medium">Bảng điều phối trung tâm</p>
+              <h2 className="text-base font-black text-white uppercase tracking-tight">Lịch Ngày Tương Lai</h2>
+              <p className="text-[11px] text-slate-400 font-medium">Sân 3 & Sân 4</p>
             </div>
             <button onClick={() => setShowModal(true)} className="rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow hover:bg-indigo-700 transition">
-              + Thêm khách
+              + Thêm người quen
             </button>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Chọn mốc thời gian</label>
-              
-              {/* ĐÃ CẬP NHẬT: Giao diện 3 nút cho 3 ngày */}
-              <div className="grid grid-cols-3 gap-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Chọn lịch để kiểm tra</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {availableDays.map((day) => (
                   <button
                     key={day.dateStr}
@@ -176,7 +165,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Thanh trạng thái số lượng */}
         <div className="rounded-3xl border border-white/5 bg-white/5 p-4 shadow-sm space-y-2">
           <div className="flex justify-between text-xs font-bold">
             <span className="text-slate-300">Tổng sĩ số ngày {selectedDate.split('-').reverse().join('/')}:</span>
@@ -187,12 +175,11 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Danh sách người chơi theo ngày đã chọn */}
         <div className="space-y-2.5">
           {loading ? (
-            <div className="text-center py-6 text-xs text-slate-400 font-bold">Đang tải dữ liệu...</div>
+            <div className="text-center py-6 text-xs text-slate-400 font-bold">Đang đồng bộ...</div>
           ) : bookings.length === 0 ? (
-            <div className="text-center rounded-3xl border border-dashed border-slate-800 py-10 text-xs text-slate-500 font-bold">Chưa có ai đăng ký vào ngày này.</div>
+            <div className="text-center rounded-3xl border border-dashed border-slate-800 py-10 text-xs text-slate-500 font-bold">Sân trống vào ngày này.</div>
           ) : (
             bookings.map(renderPlayerCard)
           )}
@@ -206,21 +193,21 @@ export default function AdminDashboard() {
         <div>
           <h2 className="text-lg font-black text-white uppercase tracking-tight flex items-center space-x-2">
             <span className="w-2 h-6 bg-emerald-500 rounded-full animate-pulse block"></span>
-            <span>Tổng hợp hôm nay</span>
+            <span>Hôm nay có ai chơi?</span>
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Lịch sử ra sân thực tế ({new Date().toLocaleDateString('vi-VN')})</p>
+          <p className="text-xs text-slate-400 mt-1">Lịch sử ra sân ({new Date().toLocaleDateString('vi-VN')})</p>
         </div>
 
         <div className="space-y-2.5">
           {todayBookings.length === 0 ? (
-            <div className="text-center rounded-3xl border border-dashed border-slate-800 bg-white/5 py-10 text-xs text-slate-500 font-bold">Hôm nay sân trống.</div>
+            <div className="text-center rounded-3xl border border-dashed border-slate-800 bg-white/5 py-10 text-xs text-slate-500 font-bold">Chưa có thành viên nào xếp lịch vào hôm nay.</div>
           ) : (
             todayBookings.map(renderPlayerCard)
           )}
         </div>
       </div>
 
-      {/* MODAL FORM THÊM KHÁCH VIP (ADMIN) */}
+      {/* MODAL FORM THÊM NGƯỜI QUEN (ADMIN) */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
