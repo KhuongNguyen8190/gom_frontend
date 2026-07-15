@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { bookingService } from '../services/bookingService';
+import { bookingService } from '../services/BookingService';
 
 export default function BookingForm() {
   // Gắn cứng ngầm courtNumber: 3 để không báo lỗi Backend

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { bookingService } from '../services/bookingService'; // Nhớ kiểm tra lại tên file service cho đúng
+import { bookingService } from '../services/BookingService';
 
 export default function AdminDashboard() {
   const [selectedDate, setSelectedDate] = useState('');
